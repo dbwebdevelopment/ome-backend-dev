@@ -30,40 +30,29 @@ jobs:
       - name: Run tests
         run: dotnet test --no-build --configuration Release --verbosity normal
 
-      # Optional: Uncomment and configure SonarCloud if needed
-      # - name: Run SonarCloud Scan
-      #   uses: SonarSource/sonarcloud-github-action@master
-      #   env:
-      #     GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      #     SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
-      #   with:
-      #     args: >
-      #       -Dsonar.projectKey=${{ github.repository_owner }}_${{ github.event.repository.name }}
-      #       -Dsonar.organization=${{ github.repository_owner }}
-
       - name: Run OWASP Dependency Check
         uses: dependency-check/Dependency-Check_Action@main
         with:
           project: 'ome'
-          path: '.''
+          path: '.'
           format: 'HTML,XML'
           out: 'dependency-check-reports'
           args: >
             --failOnCVSS 8
             --enableRetired
-            --suppression ./suppression.xml
+            --suppression suppression.xml
 
-          format: ''
       - name: Upload security report
         uses: actions/upload-artifact@v4
         with:
           name: dependency-check-report
-          path: reports
+          path: dependency-check-reports
 
       - name: Login to GitHub Container Registry
         if: github.event_name != 'pull_request'
         uses: docker/login-action@v3
         with:
+          registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
