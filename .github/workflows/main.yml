@@ -51,7 +51,7 @@ jobs:
           args: >
             --failOnCVSS 7
             --enableRetired
-            --suppression suppression.xml
+             --suppression "${GITHUB_WORKSPACE}/suppression.xml"
 
       - name: Upload security report
         uses: actions/upload-artifact@v4
