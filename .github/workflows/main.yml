@@ -1,0 +1,91 @@
+name: .NET CI/CD Pipeline
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+
+jobs:
+  build-test-and-scan:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '9.0.x'
+
+      - name: Restore dependencies
+        run: dotnet restore
+
+      - name: Build
+        run: dotnet build --no-restore --configuration Release
+
+      - name: Run tests
+        run: dotnet test --no-build --configuration Release --verbosity normal
+      
+      # Security Scanning
+      - name: Run SonarCloud Scan
+        uses: SonarSource/sonarcloud-github-action@master
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        with:
+          args: >
+            -Dsonar.projectKey=${{ github.repository_owner }}_${{ github.event.repository.name }}
+            -Dsonar.organization=${{ github.repository_owner }}
+
+      - name: Run OWASP Dependency Check
+        uses: dependency-check/Dependency-Check_Action@main
+        with:
+          project: 'ome.API'
+          path: '.'
+          format: 'HTML'
+          out: 'reports'
+          args: >
+            --failOnCVSS 7
+            --enableRetired
+
+      - name: Upload security report
+        uses: actions/upload-artifact@v3
+        with:
+          name: dependency-check-report
+          path: reports
+
+      - name: Docker build & push to GitHub Container Registry
+        if: github.event_name != 'pull_request'
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./ome.API/Dockerfile
+          push: true
+          tags: |
+            ghcr.io/${{ github.repository_owner }}/${{ github.event.repository.name }}:${{ github.sha }}
+            ghcr.io/${{ github.repository_owner }}/${{ github.event.repository.name }}:latest
+            ghcr.io/${{ github.repository_owner }}/${{ github.event.repository.name }}:${{ github.ref_name }}
+
+  deploy-to-coolify:
+    runs-on: ubuntu-latest
+    needs: build-test-and-scan
+    if: success() && github.event_name != 'pull_request' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop')
+    
+    steps:
+      - name: Deploy to Coolify
+        uses: appleboy/ssh-action@v1.0.0
+        with:
+          host: ${{ secrets.COOLIFY_HOST }}
+          username: ${{ secrets.COOLIFY_USERNAME }}
+          key: ${{ secrets.COOLIFY_SSH_KEY }}
+          port: 22
+          script: |
+            # Aktualisieren Sie den Coolify-Container
+            cd /path/to/coolify/project
+            
+            # Webhook zur Coolify-Instanz auslösen (ersetzen Sie die URL durch Ihre eigene)
+            curl -X POST "https://${{ secrets.COOLIFY_WEBHOOK_URL }}/api/v1/webhooks/${{ secrets.COOLIFY_WEBHOOK_ID }}?token=${{ secrets.COOLIFY_WEBHOOK_TOKEN }}"
