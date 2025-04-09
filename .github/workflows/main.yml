@@ -53,10 +53,18 @@ jobs:
             --enableRetired
 
       - name: Upload security report
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: dependency-check-report
           path: reports
+
+      - name: Login to GitHub Container Registry
+        if: github.event_name != 'pull_request'
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Docker build & push to GitHub Container Registry
         if: github.event_name != 'pull_request'
@@ -84,8 +92,5 @@ jobs:
           key: ${{ secrets.COOLIFY_SSH_KEY }}
           port: 22
           script: |
-            # Aktualisieren Sie den Coolify-Container
-            cd /path/to/coolify/project
-            
-            # Webhook zur Coolify-Instanz auslösen (ersetzen Sie die URL durch Ihre eigene)
+            # Trigger Coolify webhook for deployment
             curl -X POST "https://${{ secrets.COOLIFY_WEBHOOK_URL }}/api/v1/webhooks/${{ secrets.COOLIFY_WEBHOOK_ID }}?token=${{ secrets.COOLIFY_WEBHOOK_TOKEN }}"
