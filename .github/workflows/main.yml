@@ -40,31 +40,27 @@ jobs:
       #     args: >
       #       -Dsonar.projectKey=${{ github.repository_owner }}_${{ github.event.repository.name }}
       #       -Dsonar.organization=${{ github.repository_owner }}
-
-      - name: Create suppression file
-        run: |
-          cat > suppression.xml << 'EOL'
-          <?xml version="1.0" encoding="UTF-8"?>
-          <suppressions xmlns="https://jeremylong.github.io/DependencyCheck/dependency-suppression.1.3.xsd">
-              <suppress>
-                  <notes>False positive für Npgsql.EntityFrameworkCore.PostgreSQL</notes>
-                 <packageUrl regex="true">^pkg:generic/Npgsql\.EntityFrameworkCore\.PostgreSQL@9\..*$</packageUrl>
-                  <cpe>cpe:/a:postgresql:postgresql</cpe>
-                  <cpe>cpe:/a:www-sql_project:www-sql</cpe>
-              </suppress>
-          </suppressions>
-          EOL
-
       - name: Run OWASP Dependency Check
         uses: dependency-check/Dependency-Check_Action@main
         with:
-          project: 'ome.API'
-          path: '.'
-          format: 'HTML'
-          out: 'reports'
+          project: 'Multi-Project Scan'
+          path: |
+            './ome.API'
+            './ome.Core'
+            './ome.Infrastructure'
+            './ome.Shared'
+            './ome.Tests'
+          format: 'HTML,XML'
+          out: 'dependency-check-reports'
           args: >
-            --failOnCVSS 7
+            --failOnCVSS 8
             --enableRetired
+            --scan ./ome.API
+            --scan ./ome.Core
+            --scan ./ome.Infrastructure
+            --scan ./ome.Shared
+            --scan ./ome.Tests
+            --suppression ./suppression.xml
 
       - name: Upload security report
         uses: actions/upload-artifact@v4
