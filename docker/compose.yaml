@@ -2,8 +2,8 @@
   ome.api:
     image: ${CI_REGISTRY_IMAGE:-ome.api}:${CI_COMMIT_SHA:-latest}
     build:
-      context: .
-      dockerfile: docker/Dockerfile
+      context: ..
+      dockerfile: Dockerfile
       args:
         BUILD_CONFIGURATION: Release
     environment:
