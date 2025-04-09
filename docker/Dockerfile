@@ -7,10 +7,10 @@ EXPOSE 8081
 FROM mcr.microsoft.com/dotnet/sdk:9.0 AS build
 ARG BUILD_CONFIGURATION=Release
 WORKDIR /src
-COPY ["ome-server-v1/ome.API/ome.API.csproj", "ome.API/"]
+COPY ["ome.API/ome.API.csproj", "ome.API/"]
 RUN dotnet restore "ome.API/ome.API.csproj"
 COPY . .
-WORKDIR "/src/ome-server-v1/ome.API"
+WORKDIR "/src/ome.API"
 RUN dotnet build "ome.API.csproj" -c $BUILD_CONFIGURATION -o /app/build
 
 FROM build AS publish
