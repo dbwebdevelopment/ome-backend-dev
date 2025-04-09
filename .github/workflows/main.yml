@@ -63,7 +63,7 @@ jobs:
         uses: docker/build-push-action@v5
         with:
           context: .
-          file: ./ome.API/Dockerfile
+          file: ./docker/Dockerfile
           push: true
           tags: |
             ghcr.io/${{ github.repository_owner }}/${{ github.event.repository.name }}:${{ github.sha }}
