@@ -51,6 +51,7 @@ jobs:
           args: >
             --failOnCVSS 7
             --enableRetired
+            --suppression suppression.xml
 
       - name: Upload security report
         uses: actions/upload-artifact@v4
