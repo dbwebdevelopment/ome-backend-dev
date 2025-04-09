@@ -77,4 +77,5 @@ jobs:
     steps:
       - name: Trigger Coolify Deployment Webhook
         run: |
-          curl -X POST "https://${{ secrets.COOLIFY_WEBHOOK_URL }}/api/v1/webhooks/${{ secrets.COOLIFY_WEBHOOK_ID }}?token=${{ secrets.COOLIFY_WEBHOOK_TOKEN }}"
+          curl -X POST "https://coolify.officemadeeasy.eu/api/v1/deploy?uuid=${{ secrets.COOLIFY_WEBHOOK_ID }}&force=false" \
+          -H "Authorization: Bearer ${{ secrets.COOLIFY_WEBHOOK_TOKEN }}"
