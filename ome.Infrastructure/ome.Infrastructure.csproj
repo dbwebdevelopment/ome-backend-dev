@@ -30,12 +30,7 @@
         <PackageReference Include="Serilog.Sinks.File" Version="6.0.0"/>
         <PackageReference Include="Serilog.Sinks.Seq" Version="9.0.0"/>
         <PackageReference Include="System.IdentityModel.Tokens.Jwt" Version="8.7.0"/>
-    </ItemGroup>
-
-    <ItemGroup>
-      <Reference Include="HotChocolate.Abstractions">
-        <HintPath>..\..\..\..\..\.nuget\packages\hotchocolate.abstractions\15.1.3\lib\net9.0\HotChocolate.Abstractions.dll</HintPath>
-      </Reference>
+        <PackageReference Include="HotChocolate.Abstractions" Version="15.1.3" />
     </ItemGroup>
 
 </Project>
