@@ -58,20 +58,30 @@ public class Program {
                 configuration.GetConnectionString("DefaultConnection"),
                 npgsqlOptions =>
                 {
+                    // Assembly für Migrationen
                     npgsqlOptions.MigrationsAssembly(typeof(ApplicationDbContext).Assembly.FullName);
 
+                    // Verbesserter Retry-Mechanismus mit umgebungsspezifischer Konfiguration
                     npgsqlOptions.EnableRetryOnFailure(
                         maxRetryCount: environment.IsDevelopment() ? 3 : 5,
                         maxRetryDelay: TimeSpan.FromSeconds(environment.IsDevelopment() ? 15 : 30),
                         errorCodesToAdd: null);
+
+                    // Zusätzliche Sicherheits- und Leistungsempfehlungen
+                    npgsqlOptions.UseQuerySplittingBehavior(QuerySplittingBehavior.SplitQuery);
+                    npgsqlOptions.CommandTimeout(30);
+
+                    // SSL/TLS-Konfiguration kann hier hinzugefügt werden, falls noch nicht implementiert
                 });
 
-            if (environment.IsDevelopment())
+            if (!environment.IsDevelopment())
             {
-                options.EnableSensitiveDataLogging();
-                options.EnableDetailedErrors();
-                logger.LogInformation("Datenbankkonfiguration für Entwicklungsumgebung aktiviert");
+                return;
             }
+
+            options.EnableSensitiveDataLogging();
+            options.EnableDetailedErrors();
+            logger.LogInformation("Datenbankkonfiguration für Entwicklungsumgebung aktiviert");
         }
         catch (Exception ex)
         {
