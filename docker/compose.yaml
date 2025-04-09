@@ -1,8 +1,9 @@
-﻿services:
+﻿version: '3.8'
+services:
   ome.api:
     image: ${CI_REGISTRY_IMAGE:-ome.api}:${CI_COMMIT_SHA:-latest}
     build:
-      context: ..
+      context: .
       dockerfile: Dockerfile
       args:
         BUILD_CONFIGURATION: Release
