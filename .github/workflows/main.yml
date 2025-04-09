@@ -9,7 +9,7 @@ on:
 jobs:
   build-test-and-scan:
     runs-on: ubuntu-latest
-    
+
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
@@ -29,17 +29,17 @@ jobs:
 
       - name: Run tests
         run: dotnet test --no-build --configuration Release --verbosity normal
-      
-      # Security Scanning
-      #- name: Run SonarCloud Scan
-        #uses: SonarSource/sonarcloud-github-action@master
-        #env:
-          #GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          #SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
-        #with:
-          #args: >
-            #-Dsonar.projectKey=${{ github.repository_owner }}_${{ github.event.repository.name }}
-            #-Dsonar.organization=${{ github.repository_owner }}
+
+      # Optional: Uncomment and configure SonarCloud if needed
+      # - name: Run SonarCloud Scan
+      #   uses: SonarSource/sonarcloud-github-action@master
+      #   env:
+      #     GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      #     SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+      #   with:
+      #     args: >
+      #       -Dsonar.projectKey=${{ github.repository_owner }}_${{ github.event.repository.name }}
+      #       -Dsonar.organization=${{ github.repository_owner }}
 
       - name: Run OWASP Dependency Check
         uses: dependency-check/Dependency-Check_Action@main
@@ -82,15 +82,8 @@ jobs:
     runs-on: ubuntu-latest
     needs: build-test-and-scan
     if: success() && github.event_name != 'pull_request' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop')
-    
+
     steps:
-      - name: Deploy to Coolify
-        uses: appleboy/ssh-action@v1.0.0
-        with:
-          host: ${{ secrets.COOLIFY_HOST }}
-          username: ${{ secrets.COOLIFY_USERNAME }}
-          key: ${{ secrets.COOLIFY_SSH_KEY }}
-          port: 22
-          script: |
-            # Trigger Coolify webhook for deployment
-            curl -X POST "https://${{ secrets.COOLIFY_WEBHOOK_URL }}/api/v1/webhooks/${{ secrets.COOLIFY_WEBHOOK_ID }}?token=${{ secrets.COOLIFY_WEBHOOK_TOKEN }}"
+      - name: Trigger Coolify Deployment Webhook
+        run: |
+          curl -X POST "https://${{ secrets.COOLIFY_WEBHOOK_URL }}/api/v1/webhooks/${{ secrets.COOLIFY_WEBHOOK_ID }}?token=${{ secrets.COOLIFY_WEBHOOK_TOKEN }}"
