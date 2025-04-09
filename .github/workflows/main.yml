@@ -35,7 +35,7 @@ jobs:
         with:
           project: 'ome'
           path: '.'
-          format: 'HTML,XML'
+          format: 'ALL'
           out: 'dependency-check-reports'
           args: >
             --failOnCVSS 8
