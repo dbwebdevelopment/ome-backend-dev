@@ -21,6 +21,8 @@ services:
     ports:
       - "8080"
       - "8443"
+    volumes:
+      - /data/coolify/databases/nwkgcw0gs0k0oko0cww44gw0/ssl/server.crt:/etc/ssl/certs/coolify-ca.crt:ro
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
