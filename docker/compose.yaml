@@ -10,7 +10,7 @@ services:
     environment:
       - ASPNETCORE_ENVIRONMENT=Production
       - ASPNETCORE_URLS=https://+:8443;http://+:8080
-      - ConnectionStrings__PostgresConnection=Host=${DB_HOST};Port=5432;Database=${DB_NAME};Username=${DB_USER};Password=${DB_PASSWORD};SSL Mode=VerifyFull;Root Certificate=/etc/ssl/certs/coolify-ca.crt
+      - ConnectionStrings__PostgresConnection=Host=${DB_HOST};Port=${DB_PORT};Database=${DB_NAME};Username=${DB_USER};Password=${DB_PASSWORD};SSL Mode=VerifyFull;Root Certificate=/etc/ssl/certs/coolify-ca.crt
       - Keycloak__BaseUrl=${KEYCLOAK_BASE_URL}
       - Keycloak__Realm=${KEYCLOAK_REALM}
       - Keycloak__ClientId=${KEYCLOAK_CLIENT_ID}
