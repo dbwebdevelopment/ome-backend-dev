@@ -47,268 +47,263 @@ public class Program {
         builder.Host.UseSerilog();
     }
 
-    private static void ConfigureDatabaseOptions(IServiceProvider sp, DbContextOptionsBuilder options) {
-        var configuration = sp.GetRequiredService<IConfiguration>();
-        var environment = sp.GetRequiredService<IHostEnvironment>();
-        var logger = sp.GetRequiredService<ILogger<Program>>();
+  private static void ConfigureDatabaseOptions(IServiceProvider sp, DbContextOptionsBuilder options) {
+    var configuration = sp.GetRequiredService<IConfiguration>();
+    var environment = sp.GetRequiredService<IHostEnvironment>();
+    var logger = sp.GetRequiredService<ILogger<Program>>();
 
-        try {
-            var connectionString = configuration.GetConnectionString("DefaultConnection");
+    try {
+        var connectionString = configuration.GetConnectionString("DefaultConnection");
 
-            connectionString = connectionString?.Replace("${DB_HOST}", Environment.GetEnvironmentVariable("DB_HOST"))
-                .Replace("${DB_PORT}", Environment.GetEnvironmentVariable("DB_PORT"))
-                .Replace("${DB_NAME}", Environment.GetEnvironmentVariable("DB_NAME"))
-                .Replace("${DB_USER}", Environment.GetEnvironmentVariable("DB_USER"))
-                .Replace("${DB_PASSWORD}", Environment.GetEnvironmentVariable("DB_PASSWORD"));
+        connectionString = connectionString?
+            .Replace("${DB_HOST}", Environment.GetEnvironmentVariable("DB_HOST"))
+            .Replace("${DB_PORT}", Environment.GetEnvironmentVariable("DB_PORT"))
+            .Replace("${DB_NAME}", Environment.GetEnvironmentVariable("DB_NAME"))
+            .Replace("${DB_USER}", Environment.GetEnvironmentVariable("DB_USER"))
+            .Replace("${DB_PASSWORD}", Environment.GetEnvironmentVariable("DB_PASSWORD"));
 
-            // MySQL/MariaDB Connection String verwenden
-            // SSL-Konfiguration für MariaDB ist einfacher
-            var sslEnabled = !string.IsNullOrEmpty(Environment.GetEnvironmentVariable("DB_SSL_ENABLED")) &&
-                             Environment.GetEnvironmentVariable("DB_SSL_ENABLED")?.ToLower() == "true";
+        // SSL-Konfiguration
+        var sslEnabled = Environment.GetEnvironmentVariable("DB_SSL_ENABLED")?.ToLower() == "true";
+        var rootCaCertPath = Environment.GetEnvironmentVariable("DB_SSL_CA_PATH");
 
-            if (sslEnabled) {
-                // SSL für MariaDB einrichten
-                var rootCaCertPath = Environment.GetEnvironmentVariable("DB_SSL_CA_PATH");
-
-                if (File.Exists(rootCaCertPath)) {
-                    // SSL mit CA-Zertifikat hinzufügen
-                    connectionString += $";SslMode=VerifyCA;SslCa={rootCaCertPath}";
-
-                    logger.LogInformation("SSL-Konfiguration mit VerifyCA und Root-CA-Zertifikat: {CertPath}",
-                        rootCaCertPath);
-                }
-                else {
-                    // KRITISCHER FEHLER - Rot und fett markieren in Logs
-                    var errorMessage =
-                        $"KRITISCHER SICHERHEITSFEHLER: Root-CA-Zertifikat nicht gefunden unter {rootCaCertPath}!";
-                    logger.LogCritical(errorMessage);
-
-                    // In der Konsole deutlich anzeigen
-                    Console.ForegroundColor = ConsoleColor.Red;
-                    Console.WriteLine("**********************************************");
-                    Console.WriteLine(errorMessage);
-                    Console.WriteLine("**********************************************");
-                    Console.ResetColor();
-
-                    // Verbindung abbrechen durch Exception
-                    throw new FileNotFoundException($"Root-CA-Zertifikat nicht gefunden: {rootCaCertPath}",
-                        rootCaCertPath);
-                }
+        if (sslEnabled && !string.IsNullOrEmpty(rootCaCertPath)) {
+            if (File.Exists(rootCaCertPath)) {
+                connectionString += $";SslMode=VerifyCA;SslCa={rootCaCertPath}";
+                logger.LogInformation("SSL-Konfiguration mit Root-CA: {CertPath}", rootCaCertPath);
             }
-
-            // Server Version ermitteln - für MariaDB wichtig
-            // In der Produktion besser die tatsächliche Version angeben
-            var serverVersion = new MariaDbServerVersion(new Version(10, 5, 0));
-
-            options.UseMySql(
-                connectionString,
-                serverVersion,
-                mysqlOptions => {
-                    // Assembly für Migrationen
-                    mysqlOptions.MigrationsAssembly(typeof(ApplicationDbContext).Assembly.FullName);
-
-                    // Verbesserter Retry-Mechanismus mit umgebungsspezifischer Konfiguration
-                    mysqlOptions.EnableRetryOnFailure(
-                        maxRetryCount: environment.IsDevelopment() ? 3 : 5,
-                        maxRetryDelay: TimeSpan.FromSeconds(environment.IsDevelopment() ? 15 : 30),
-                        errorNumbersToAdd: null);
-
-                    // Zusätzliche Leistungsempfehlungen
-                    mysqlOptions.UseQuerySplittingBehavior(QuerySplittingBehavior.SplitQuery);
-                    mysqlOptions.CommandTimeout(30);
-                });
-
-            if (!environment.IsDevelopment()) {
-                return;
+            else {
+                logger.LogWarning("SSL-Zertifikat nicht gefunden: {CertPath}", rootCaCertPath);
             }
+        }
 
+        // Dynamische Serverversion basierend auf Umgebungsvariable
+        var serverVersionStr = Environment.GetEnvironmentVariable("DB_SERVER_VERSION") ?? "10.5.0";
+        var serverVersion = new MariaDbServerVersion(Version.Parse(serverVersionStr));
+
+        logger.LogInformation("Verbinde zu MariaDB Version: {Version}", serverVersion);
+
+        options.UseMySql(
+            connectionString,
+            serverVersion,
+            mysqlOptions => {
+                // Migrations-Assembly
+                mysqlOptions.MigrationsAssembly(typeof(ApplicationDbContext).Assembly.FullName);
+
+                // Robuster Retry-Mechanismus
+                mysqlOptions.EnableRetryOnFailure(
+                    maxRetryCount: environment.IsDevelopment() ? 3 : 10,
+                    maxRetryDelay: TimeSpan.FromSeconds(environment.IsDevelopment() ? 15 : 60),
+                    errorNumbersToAdd: [
+                        1042,   // Connection timeout
+                        1044,   // Access denied to database
+                        1045,   // Access denied for user
+                        1129,   // Host blocked 
+                        -2      // Timeout errors
+                    ]
+                );
+
+                // Performance & Stability Optimierungen
+                mysqlOptions.UseQuerySplittingBehavior(QuerySplittingBehavior.SplitQuery);
+                mysqlOptions.CommandTimeout(120);  // 2 Minuten Timeout
+                mysqlOptions.EnableRetryOnFailure();
+            }
+        );
+
+        // Entwicklungsumgebung spezifische Konfiguration
+        if (environment.IsDevelopment()) {
             options.EnableSensitiveDataLogging();
             options.EnableDetailedErrors();
-            logger.LogInformation("Datenbankkonfiguration für Entwicklungsumgebung aktiviert");
+            logger.LogInformation("Entwicklungs-Datenbankoptionen aktiviert");
         }
-        catch (Exception ex) {
-            logger.LogError(ex, "Fehler bei der Datenbankkonfiguration");
-            throw;
+        else {
+            // Produktions-Logging-Optimierungen
+            options.EnableDetailedErrors(false);
         }
+
+        logger.LogInformation("Datenbankverbindung erfolgreich konfiguriert");
     }
-
-    private static void AddCustomInterceptors(IServiceProvider sp, DbContextOptionsBuilder options) {
-        try {
-            var auditInterceptor = sp.GetRequiredService<AuditSaveChangesInterceptor>();
-            var tenantInterceptor = sp.GetRequiredService<TenantSaveChangesInterceptor>();
-
-            options.AddInterceptors(auditInterceptor, tenantInterceptor);
-
-            Log.Information("Interceptors erfolgreich konfiguriert");
-        }
-        catch (Exception ex) {
-            Log.Error(ex, "Fehler bei der Konfiguration der Interceptors");
-            throw;
-        }
+    catch (Exception ex) {
+        logger.LogCritical(ex, "Kritischer Fehler bei Datenbankverbindungskonfiguration");
+        throw;
     }
+  }
+  private static void AddCustomInterceptors(IServiceProvider sp, DbContextOptionsBuilder options) {
+      try {
+          var auditInterceptor = sp.GetRequiredService<AuditSaveChangesInterceptor>();
+          var tenantInterceptor = sp.GetRequiredService<TenantSaveChangesInterceptor>();
 
-    public static async Task Main(string[] args) {
-        var builder = WebApplication.CreateBuilder(args);
-        Log.Information("Starte MultiTenant Backend");
+          options.AddInterceptors(auditInterceptor, tenantInterceptor);
 
-        try {
-            ConfigureLogging(builder);
+          Log.Information("Interceptors erfolgreich konfiguriert");
+      }
+      catch (Exception ex) {
+          Log.Error(ex, "Fehler bei der Konfiguration der Interceptors");
+          throw;
+      }
+  }
 
-            var moduleSettings = builder.Configuration.GetSection("Modules").Get<Dictionary<string, bool>>()
-                                 ?? new Dictionary<string, bool>();
+  public static async Task Main(string[] args) {
+      var builder = WebApplication.CreateBuilder(args);
+      Log.Information("Starte MultiTenant Backend");
 
-            Log.Information("Starte MultiTenant Backend mit {ModuleCount} Modulen", moduleSettings.Count);
+      try {
+          ConfigureLogging(builder);
 
-            // Services registrieren
-            builder.Services.AddDistributedMemoryCache();
-            builder.Services.AddControllers();
-            builder.Services.AddHttpContextAccessor();
-            builder.Services.AddMemoryCache();
+          var moduleSettings = builder.Configuration.GetSection("Modules").Get<Dictionary<string, bool>>()
+                               ?? new Dictionary<string, bool>();
 
-            builder.Services.AddSession(options => {
-                options.IdleTimeout = TimeSpan.FromMinutes(30);
-                options.Cookie.HttpOnly = true;
-                options.Cookie.IsEssential = true;
-                options.Cookie.SameSite = SameSiteMode.Lax;
-                options.Cookie.SecurePolicy = CookieSecurePolicy.Always;
-            });
-            builder.Services.AddLoggingServices(builder.Configuration);
+          Log.Information("Starte MultiTenant Backend mit {ModuleCount} Modulen", moduleSettings.Count);
 
-            // Scoped Services
-            builder.Services.AddScoped<ITenantService, TenantService>();
-            builder.Services.AddSingleton<TenantHttpRequestInterceptor>();
-            builder.Services.AddScoped<ICurrentUserService, CurrentUserService>();
-            builder.Services.AddScoped<IKeycloakService, KeycloakService>();
+          // Services registrieren
+          builder.Services.AddDistributedMemoryCache();
+          builder.Services.AddControllers();
+          builder.Services.AddHttpContextAccessor();
+          builder.Services.AddMemoryCache();
 
-            // Interceptors als Scoped registrieren
-            builder.Services.AddScoped<AuditSaveChangesInterceptor>();
-            builder.Services.AddScoped<TenantSaveChangesInterceptor>();
+          builder.Services.AddSession(options => {
+              options.IdleTimeout = TimeSpan.FromMinutes(30);
+              options.Cookie.HttpOnly = true;
+              options.Cookie.IsEssential = true;
+              options.Cookie.SameSite = SameSiteMode.Lax;
+              options.Cookie.SecurePolicy = CookieSecurePolicy.Always;
+          });
+          builder.Services.AddLoggingServices(builder.Configuration);
 
-            // DbContext Konfiguration
-            builder.Services.AddDbContext<ApplicationDbContext>((sp, options) => {
-                ConfigureDatabaseOptions(sp, options);
-                AddCustomInterceptors(sp, options);
-            });
+          // Scoped Services
+          builder.Services.AddScoped<ITenantService, TenantService>();
+          builder.Services.AddSingleton<TenantHttpRequestInterceptor>();
+          builder.Services.AddScoped<ICurrentUserService, CurrentUserService>();
+          builder.Services.AddScoped<IKeycloakService, KeycloakService>();
 
-            // Identität und Authentifizierung
-            builder.Services.AddIdentityServices(builder.Configuration);
+          // Interceptors als Scoped registrieren
+          builder.Services.AddScoped<AuditSaveChangesInterceptor>();
+          builder.Services.AddScoped<TenantSaveChangesInterceptor>();
 
-            // GraphQL
-            builder.Services.AddGraphQlServices(builder.Configuration);
+          // DbContext Konfiguration
+          builder.Services.AddDbContext<ApplicationDbContext>((sp, options) => {
+              ConfigureDatabaseOptions(sp, options);
+              AddCustomInterceptors(sp, options);
+          });
 
-            // Swagger
-            builder.Services.AddEndpointsApiExplorer();
-            builder.Services.AddSwaggerWithAuth(builder.Configuration);
+          // Identität und Authentifizierung
+          builder.Services.AddIdentityServices(builder.Configuration);
 
-            // Messaging und Events
-            builder.Services.AddSingleton<IEventBus, InMemoryEventBus>();
+          // GraphQL
+          builder.Services.AddGraphQlServices(builder.Configuration);
 
-            // Modulregistrierung
-            var moduleManager = new ModuleManager();
-            moduleManager.RegisterModule(new AuthModule(), moduleSettings.GetValueOrDefault("Auth", true));
-            moduleManager.RegisterModule(new UsersModule(), moduleSettings.GetValueOrDefault("Users", true));
+          // Swagger
+          builder.Services.AddEndpointsApiExplorer();
+          builder.Services.AddSwaggerWithAuth(builder.Configuration);
 
-            moduleManager.RegisterModule(new NotificationsModule(),
-                moduleSettings.GetValueOrDefault("Notifications", true));
-            moduleManager.ConfigureServices(builder.Services, builder.Configuration);
+          // Messaging und Events
+          builder.Services.AddSingleton<IEventBus, InMemoryEventBus>();
 
-            // CORS
-            builder.Services.AddCors(options => {
-                options.AddPolicy("AllowSpecificOrigins",
-                    policy => policy
-                        .WithOrigins(
-                            "http://localhost:3000"
-                        )
-                        .AllowAnyMethod()
-                        .AllowAnyHeader()
-                        .AllowCredentials());
-            });
+          // Modulregistrierung
+          var moduleManager = new ModuleManager();
+          moduleManager.RegisterModule(new AuthModule(), moduleSettings.GetValueOrDefault("Auth", true));
+          moduleManager.RegisterModule(new UsersModule(), moduleSettings.GetValueOrDefault("Users", true));
 
-            var app = builder.Build();
-            Log.Information("Anwendung erfolgreich gebaut");
+          moduleManager.RegisterModule(new NotificationsModule(),
+              moduleSettings.GetValueOrDefault("Notifications", true));
+          moduleManager.ConfigureServices(builder.Services, builder.Configuration);
 
-            // Datenbank-Initialisierung
-            using (var scope = app.Services.CreateScope()) {
-                var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-                var logger = scope.ServiceProvider.GetRequiredService<ILogger<Program>>();
+          // CORS
+          builder.Services.AddCors(options => {
+              options.AddPolicy("AllowSpecificOrigins",
+                  policy => policy
+                      .WithOrigins(
+                          "http://localhost:3000"
+                      )
+                      .AllowAnyMethod()
+                      .AllowAnyHeader()
+                      .AllowCredentials());
+          });
 
-                try {
-                    logger.LogInformation("Migriere Datenbank...");
-                    await dbContext.Database.MigrateAsync();
-                    logger.LogInformation("Datenbank erfolgreich migriert");
-                }
-                catch (Exception ex) {
-                    logger.LogError(ex, "Ein Fehler ist bei der Datenbankinitialisierung aufgetreten");
-                    throw;
-                }
-            }
+          var app = builder.Build();
+          Log.Information("Anwendung erfolgreich gebaut");
 
-            // HTTP-Pipeline-Konfiguration
-            if (app.Environment.IsDevelopment()) {
-                app.UseDeveloperExceptionPage();
+          // Datenbank-Initialisierung
+          using (var scope = app.Services.CreateScope()) {
+              var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+              var logger = scope.ServiceProvider.GetRequiredService<ILogger<Program>>();
 
-                app.UseSwagger();
+              try {
+                  logger.LogInformation("Migriere Datenbank...");
+                  await dbContext.Database.MigrateAsync();
+                  logger.LogInformation("Datenbank erfolgreich migriert");
+              }
+              catch (Exception ex) {
+                  logger.LogError(ex, "Ein Fehler ist bei der Datenbankinitialisierung aufgetreten");
+                  throw;
+              }
+          }
 
-                app.UseSwaggerUI(c => {
-                    c.SwaggerEndpoint("/swagger/v1/swagger.json", "MultiTenant API v1");
-                    c.RoutePrefix = "swagger";
-                });
+          // HTTP-Pipeline-Konfiguration
+          if (app.Environment.IsDevelopment()) {
+              app.UseDeveloperExceptionPage();
 
-                app.MapControllers(); // Optional hier, kann auch global danach kommen
-            }
-            else if (app.Environment.IsProduction()) {
-                app.UseExceptionHandler("/Error");
-                app.UseHsts();
+              app.UseSwagger();
 
-                // HTTPS-Weiterleitung aktivieren
-                app.UseHttpsRedirection();
+              app.UseSwaggerUI(c => {
+                  c.SwaggerEndpoint("/swagger/v1/swagger.json", "MultiTenant API v1");
+                  c.RoutePrefix = "swagger";
+              });
 
-                // CORS-Regel für das erlaubte Frontend
-                app.UseCors("AllowDevelopment");
+              app.MapControllers(); // Optional hier, kann auch global danach kommen
+          }
+          else if (app.Environment.IsProduction()) {
+              app.UseExceptionHandler("/Error");
+              app.UseHsts();
 
-                // Weitergeleitete Header verarbeiten (z.B. hinter einem Reverse Proxy)
-                app.UseForwardedHeaders(new ForwardedHeadersOptions {
-                    ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto
-                });
-            }
+              // HTTPS-Weiterleitung aktivieren
+              app.UseHttpsRedirection();
 
-            app.UseSerilogRequestLogging(options => {
-                options.MessageTemplate =
-                    "HTTP {RequestMethod} {RequestPath} responded {StatusCode} in {Elapsed:0.0000} ms";
+              // CORS-Regel für das erlaubte Frontend
+              app.UseCors("AllowDevelopment");
 
-                options.EnrichDiagnosticContext = (diagnosticContext, httpContext) => {
-                    if (httpContext.Request.Host.Value != null) {
-                        diagnosticContext.Set("Host", httpContext.Request.Host.Value);
-                    }
+              // Weitergeleitete Header verarbeiten (z.B. hinter einem Reverse Proxy)
+              app.UseForwardedHeaders(new ForwardedHeadersOptions {
+                  ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto
+              });
+          }
 
-                    diagnosticContext.Set("UserAgent",
-                        httpContext.Request.Headers["User-Agent"].FirstOrDefault() ?? string.Empty);
-                };
-            });
+          app.UseSerilogRequestLogging(options => {
+              options.MessageTemplate =
+                  "HTTP {RequestMethod} {RequestPath} responded {StatusCode} in {Elapsed:0.0000} ms";
 
-            app.UseHttpsRedirection();
-            app.UseStaticFiles();
+              options.EnrichDiagnosticContext = (diagnosticContext, httpContext) => {
+                  if (httpContext.Request.Host.Value != null) {
+                      diagnosticContext.Set("Host", httpContext.Request.Host.Value);
+                  }
 
-            app.UseCors("AllowSpecificOrigins");
-            app.UseSession();
-            app.UseAuthentication();
-            app.UseAuthorization();
+                  diagnosticContext.Set("UserAgent",
+                      httpContext.Request.Headers["User-Agent"].FirstOrDefault() ?? string.Empty);
+              };
+          });
 
-            app.MapGraphQL();
+          app.UseHttpsRedirection();
+          app.UseStaticFiles();
 
-            app.UseWebSockets(new WebSocketOptions {
-                KeepAliveInterval = TimeSpan.FromMinutes(2)
-            });
+          app.UseCors("AllowSpecificOrigins");
+          app.UseSession();
+          app.UseAuthentication();
+          app.UseAuthorization();
 
-            Log.Information("Starte Anwendung...");
-            await app.RunAsync();
-        }
-        catch (Exception ex) {
-            Log.Fatal(ex, "Host wurde unerwartet beendet");
-            throw;
-        }
-        finally {
-            await Log.CloseAndFlushAsync();
-        }
-    }
+          app.MapGraphQL();
+
+          app.UseWebSockets(new WebSocketOptions {
+              KeepAliveInterval = TimeSpan.FromMinutes(2)
+          });
+
+          Log.Information("Starte Anwendung...");
+          await app.RunAsync();
+      }
+      catch (Exception ex) {
+          Log.Fatal(ex, "Host wurde unerwartet beendet");
+          throw;
+      }
+      finally {
+          await Log.CloseAndFlushAsync();
+      }
+  }
 }
