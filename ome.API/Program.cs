@@ -1,3 +1,4 @@
+using System.Security.Cryptography.X509Certificates;
 using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.EntityFrameworkCore;
 using Npgsql;
@@ -48,96 +49,100 @@ public class Program {
         builder.Host.UseSerilog();
     }
 
-private static void ConfigureDatabaseOptions(IServiceProvider sp, DbContextOptionsBuilder options) {
-    var configuration = sp.GetRequiredService<IConfiguration>();
-    var environment = sp.GetRequiredService<IHostEnvironment>();
-    var logger = sp.GetRequiredService<ILogger<Program>>();
-
-    try {
-        var connectionString = configuration.GetConnectionString("DefaultConnection");
-
-        connectionString = connectionString?.Replace("${DB_HOST}", Environment.GetEnvironmentVariable("DB_HOST"))
-            .Replace("${DB_PORT}", Environment.GetEnvironmentVariable("DB_PORT"))
-            .Replace("${DB_NAME}", Environment.GetEnvironmentVariable("DB_NAME"))
-            .Replace("${DB_USER}", Environment.GetEnvironmentVariable("DB_USER"))
-            .Replace("${DB_PASSWORD}", Environment.GetEnvironmentVariable("DB_PASSWORD"));
-
-        var sslBuilder = new NpgsqlConnectionStringBuilder(connectionString);
+    private static void ConfigureDatabaseOptions(IServiceProvider sp, DbContextOptionsBuilder options) {
+        var configuration = sp.GetRequiredService<IConfiguration>();
+        var environment = sp.GetRequiredService<IHostEnvironment>();
+        var logger = sp.GetRequiredService<ILogger<Program>>();
 
         try {
-            var certPath = Environment.GetEnvironmentVariable("DB_SSL_CERT_PATH") ?? "/etc/ssl/certs/coolify-ca.crt";
+            var connectionString = configuration.GetConnectionString("DefaultConnection");
 
-            if (File.Exists(certPath)) {
-                sslBuilder.SslMode = SslMode.VerifyFull;
-                sslBuilder.RootCertificate = certPath;
-                logger.LogInformation("SSL-Zertifikat erfolgreich konfiguriert: {CertPath}", certPath);
+            connectionString = connectionString?.Replace("${DB_HOST}", Environment.GetEnvironmentVariable("DB_HOST"))
+                .Replace("${DB_PORT}", Environment.GetEnvironmentVariable("DB_PORT"))
+                .Replace("${DB_NAME}", Environment.GetEnvironmentVariable("DB_NAME"))
+                .Replace("${DB_USER}", Environment.GetEnvironmentVariable("DB_USER"))
+                .Replace("${DB_PASSWORD}", Environment.GetEnvironmentVariable("DB_PASSWORD"));
+
+            var sslBuilder = new NpgsqlConnectionStringBuilder(connectionString);
+
+            try {
+                // Pfad zum Root-CA-Zertifikat
+                var rootCaCertPath = Environment.GetEnvironmentVariable("DB_SSL_CA_PATH");
+
+                if (File.Exists(rootCaCertPath)) {
+                    // VerifyFull mit Root-CA-Zertifikat
+                    sslBuilder.SslMode = SslMode.VerifyFull;
+                    sslBuilder.RootCertificate = rootCaCertPath;
+
+                    logger.LogInformation("SSL-Konfiguration mit VerifyFull und Root-CA-Zertifikat: {CertPath}",
+                        rootCaCertPath);
+                }
+                else {
+                    // KRITISCHER FEHLER - Rot und fett markieren in Logs
+                    var errorMessage =
+                        $"KRITISCHER SICHERHEITSFEHLER: Root-CA-Zertifikat nicht gefunden unter {rootCaCertPath}!";
+                    logger.LogCritical(errorMessage);
+
+                    // In der Konsole deutlich anzeigen
+                    Console.ForegroundColor = ConsoleColor.Red;
+                    Console.WriteLine("**********************************************");
+                    Console.WriteLine(errorMessage);
+                    Console.WriteLine("**********************************************");
+                    Console.ResetColor();
+
+                    // Verbindung abbrechen durch Exception
+                    throw new FileNotFoundException($"Root-CA-Zertifikat nicht gefunden: {rootCaCertPath}",
+                        rootCaCertPath);
+                }
+
+                connectionString = sslBuilder.ConnectionString;
             }
-            else {
-                // KRITISCHER FEHLER - Rot und fett markieren in Logs
-                var errorMessage = $"KRITISCHER SICHERHEITSFEHLER: SSL-Zertifikat nicht gefunden unter {certPath}!";
+            catch (Exception ex) {
+                // Alle SSL-Konfigurationsfehler sind kritisch
+                logger.LogCritical(ex, "KRITISCHER FEHLER bei der SSL-Konfiguration");
 
-                logger.LogCritical(errorMessage);
-
-                // In der Konsole deutlich anzeigen (funktioniert nur in bestimmten Konsolen)
+                // In der Konsole deutlich anzeigen
                 Console.ForegroundColor = ConsoleColor.Red;
                 Console.WriteLine("**********************************************");
-                Console.WriteLine(errorMessage);
-
+                Console.WriteLine("KRITISCHER FEHLER: SSL-Konfiguration fehlgeschlagen!");
+                Console.WriteLine(ex.Message);
                 Console.WriteLine("**********************************************");
                 Console.ResetColor();
-                
-                // Verbindungen abbrechen durch Exception
-                throw new FileNotFoundException($"SSL-Zertifikat nicht gefunden: {certPath}", certPath);
+
+                // Exception weitergeben, um die Verbindung abzubrechen
+                throw;
             }
 
-            connectionString = sslBuilder.ConnectionString;
+            options.UseNpgsql(
+                connectionString,
+                npgsqlOptions => {
+                    // Assembly für Migrationen
+                    npgsqlOptions.MigrationsAssembly(typeof(ApplicationDbContext).Assembly.FullName);
+
+                    // Verbesserter Retry-Mechanismus mit umgebungsspezifischer Konfiguration
+                    npgsqlOptions.EnableRetryOnFailure(
+                        maxRetryCount: environment.IsDevelopment() ? 3 : 5,
+                        maxRetryDelay: TimeSpan.FromSeconds(environment.IsDevelopment() ? 15 : 30),
+                        errorCodesToAdd: null);
+
+                    // Zusätzliche Sicherheits- und Leistungsempfehlungen
+                    npgsqlOptions.UseQuerySplittingBehavior(QuerySplittingBehavior.SplitQuery);
+                    npgsqlOptions.CommandTimeout(30);
+                });
+
+            if (!environment.IsDevelopment()) {
+                return;
+            }
+
+            options.EnableSensitiveDataLogging();
+            options.EnableDetailedErrors();
+            logger.LogInformation("Datenbankkonfiguration für Entwicklungsumgebung aktiviert");
         }
         catch (Exception ex) {
-            // Alle SSL-Konfigurationsfehler sind kritisch
-            logger.LogCritical(ex, "KRITISCHER FEHLER bei der SSL-Konfiguration");
-            
-            // In der Konsole deutlich anzeigen
-            Console.ForegroundColor = ConsoleColor.Red;
-            Console.WriteLine("**********************************************");
-            Console.WriteLine("KRITISCHER FEHLER: SSL-Konfiguration fehlgeschlagen!");
-            Console.WriteLine(ex.Message);
-            Console.WriteLine("**********************************************");
-            Console.ResetColor();
-            
-            // Exception weitergeben, um die Verbindung abzubrechen
+            logger.LogError(ex, "Fehler bei der Datenbankkonfiguration");
             throw;
         }
-
-        options.UseNpgsql(
-            connectionString,
-            npgsqlOptions => {
-                // Assembly für Migrationen
-                npgsqlOptions.MigrationsAssembly(typeof(ApplicationDbContext).Assembly.FullName);
-
-                // Verbesserter Retry-Mechanismus mit umgebungsspezifischer Konfiguration
-                npgsqlOptions.EnableRetryOnFailure(
-                    maxRetryCount: environment.IsDevelopment() ? 3 : 5,
-                    maxRetryDelay: TimeSpan.FromSeconds(environment.IsDevelopment() ? 15 : 30),
-                    errorCodesToAdd: null);
-
-                // Zusätzliche Sicherheits- und Leistungsempfehlungen
-                npgsqlOptions.UseQuerySplittingBehavior(QuerySplittingBehavior.SplitQuery);
-                npgsqlOptions.CommandTimeout(30);
-            });
-
-        if (!environment.IsDevelopment()) {
-            return;
-        }
-        
-        options.EnableSensitiveDataLogging();
-        options.EnableDetailedErrors();
-        logger.LogInformation("Datenbankkonfiguration für Entwicklungsumgebung aktiviert");
     }
-    catch (Exception ex) {
-        logger.LogError(ex, "Fehler bei der Datenbankkonfiguration");
-        throw;
-    }
-}
 
     private static void AddCustomInterceptors(IServiceProvider sp, DbContextOptionsBuilder options) {
         try {

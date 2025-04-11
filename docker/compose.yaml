@@ -22,7 +22,7 @@ services:
       - "8080"
       - "8443"
     volumes:
-      - /data/coolify/databases/nwkgcw0gs0k0oko0cww44gw0/ssl/server.crt:/etc/ssl/certs/coolify-ca.crt:ro
+      - /etc/ssl/certs/Coolify_Internal_CA_Root_CA_63765285545590635409030008279072883721.pem:/etc/ssl/certs/Coolify_Internal_CA_Root_CA_63765285545590635409030008279072883721.pem:ro
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
