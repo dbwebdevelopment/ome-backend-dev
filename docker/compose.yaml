@@ -23,7 +23,7 @@ services:
         BUILD_CONFIGURATION: Release
     environment:
       - ASPNETCORE_ENVIRONMENT=Production
-      - ASPNETCORE_URLS=https://+:8443;
+      - ASPNETCORE_URLS=http://+:8080
       - ConnectionStrings__DefaultConnection=Server=${DB_HOST};Port=${DB_PORT};Database=${DB_NAME};User=${DB_USER};Password=${DB_PASSWORD};SslMode=VerifyCA;SslCa=${DB_SSL_CA_PATH}
       - Keycloak__BaseUrl=${KEYCLOAK_BASE_URL}
       - Keycloak__Realm=${KEYCLOAK_REALM}
