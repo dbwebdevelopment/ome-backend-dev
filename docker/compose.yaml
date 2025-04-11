@@ -3,18 +3,9 @@ services:
   ome.api:
     image: ${CI_REGISTRY_IMAGE:-ome.api}:${CI_COMMIT_SHA:-latest}
     labels:
-     - traefik.enable=true
-     - traefik.http.routers.ome-api.rule=Host(`dev-api.officemadeeasy.eu`) && PathPrefix(`/`)
-     - traefik.http.routers.ome-api.entryPoints=https
-     - traefik.http.routers.ome-api.middlewares=gzip
-     - traefik.http.routers.ome-api.service=ome-backend-service
-     - traefik.http.routers.ome-api.tls=true
-     - traefik.http.services.ome-api.loadbalancer.server.port=8080
-     - traefik.http.routers.ome-api.tls.certresolver=letsencrypt
-      
-     - traefik.http.routers.ome-api.rule=Host(`dev-api.officemadeeasy.eu`) && PathPrefix(`/`)
-     - traefik.http.routers.ome-api.entryPoints=http
-     - traefik.http.routers.ome-api.middlewares=redirect-to-https
+      - caddy.0.route=dev-api.officemadeeasy.eu
+      - caddy.0.handle.0.handler=reverse_proxy
+      - caddy.0.handle.0.upstreams.0.dial=:8080
     build:
       context: ..
       dockerfile: docker/Dockerfile
