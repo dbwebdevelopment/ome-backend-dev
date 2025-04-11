@@ -7,12 +7,12 @@ services:
      - traefik.http.routers.ome-api.rule=Host(`dev-api.officemadeeasy.eu`) && PathPrefix(`/`)
      - traefik.http.routers.ome-api.entryPoints=https
      - traefik.http.routers.ome-api.middlewares=gzip
-     - traefik.http.routers.ome-api.service=<unique_service_name>
+     - traefik.http.routers.ome-api.service=ome-backend-service
      - traefik.http.routers.ome-api.tls=true
      - traefik.http.services.ome-api.loadbalancer.server.port=80
      - traefik.http.routers.ome-api.tls.certresolver=letsencrypt
       
-     - traefik.http.routers.ome-api.rule=Host(`example.coolify.io`) && PathPrefix(`/`)
+     - traefik.http.routers.ome-api.rule=Host(`dev-api.officemadeeasy.eu`) && PathPrefix(`/`)
      - traefik.http.routers.ome-api.entryPoints=http
      - traefik.http.routers.ome-api.middlewares=redirect-to-https
     build:
