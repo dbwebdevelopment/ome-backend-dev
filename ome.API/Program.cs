@@ -105,7 +105,6 @@ public class Program {
                 // Performance & Stability Optimierungen
                 mysqlOptions.UseQuerySplittingBehavior(QuerySplittingBehavior.SplitQuery);
                 mysqlOptions.CommandTimeout(120);  // 2 Minuten Timeout
-                mysqlOptions.EnableRetryOnFailure();
             }
         );
 
