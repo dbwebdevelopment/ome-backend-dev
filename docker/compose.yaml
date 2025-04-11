@@ -4,7 +4,7 @@ services:
     image: ${CI_REGISTRY_IMAGE:-ome.api}:${CI_COMMIT_SHA:-latest}
     labels:
      - traefik.enable=true
-     - traefik.http.routers.ome-api.rule=Host(`example.coolify.io`) && PathPrefix(`/`)
+     - traefik.http.routers.ome-api.rule=Host(`dev-api.officemadeeasy.eu`) && PathPrefix(`/`)
      - traefik.http.routers.ome-api.entryPoints=https
      - traefik.http.routers.ome-api.middlewares=gzip
      - traefik.http.routers.ome-api.service=<unique_service_name>
