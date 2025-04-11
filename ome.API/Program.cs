@@ -75,12 +75,14 @@ private static void ConfigureDatabaseOptions(IServiceProvider sp, DbContextOptio
             else {
                 // KRITISCHER FEHLER - Rot und fett markieren in Logs
                 var errorMessage = $"KRITISCHER SICHERHEITSFEHLER: SSL-Zertifikat nicht gefunden unter {certPath}!";
+
                 logger.LogCritical(errorMessage);
-                
+
                 // In der Konsole deutlich anzeigen (funktioniert nur in bestimmten Konsolen)
                 Console.ForegroundColor = ConsoleColor.Red;
                 Console.WriteLine("**********************************************");
                 Console.WriteLine(errorMessage);
+
                 Console.WriteLine("**********************************************");
                 Console.ResetColor();
                 
