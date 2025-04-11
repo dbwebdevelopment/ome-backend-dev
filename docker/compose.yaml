@@ -2,19 +2,6 @@
 services:
   ome.api:
     image: ${CI_REGISTRY_IMAGE:-ome.api}:${CI_COMMIT_SHA:-latest}
-    labels:
-        - "traefik.enable=true"
-        - "traefik.http.routers.ome-api.rule=Host(`dev-api.officemadeeasy.eu`)"
-        - "traefik.http.routers.ome-api.entrypoints=websecure"
-        - "traefik.http.routers.ome-api.tls=true"
-        - "traefik.http.routers.ome-api.tls.certresolver=letsencrypt"
-        - "traefik.http.services.ome-api.loadbalancer.server.port=8080"
-        # Redirect HTTP to HTTPS
-        - "traefik.http.routers.ome-api-http.rule=Host(`dev-api.officemadeeasy.eu`)"
-        - "traefik.http.routers.ome-api-http.entrypoints=web"
-        - "traefik.http.routers.ome-api-http.middlewares=https-redirect"
-        - "traefik.http.middlewares.https-redirect.redirectscheme.scheme=https"
-        - "traefik.http.middlewares.https-redirect.redirectscheme.permanent=true"
     
     build:
       context: ..
