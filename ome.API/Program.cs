@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.EntityFrameworkCore;
+using Npgsql;
 using ome.API.Extensions;
 using ome.API.GraphQL.Extensions;
 using ome.API.GraphQL.Middlewares;
@@ -47,60 +48,97 @@ public class Program {
         builder.Host.UseSerilog();
     }
 
-    private static void ConfigureDatabaseOptions(IServiceProvider sp, DbContextOptionsBuilder options) {
-        var configuration = sp.GetRequiredService<IConfiguration>();
-        var environment = sp.GetRequiredService<IHostEnvironment>();
-        var logger = sp.GetRequiredService<ILogger<Program>>();
+private static void ConfigureDatabaseOptions(IServiceProvider sp, DbContextOptionsBuilder options) {
+    var configuration = sp.GetRequiredService<IConfiguration>();
+    var environment = sp.GetRequiredService<IHostEnvironment>();
+    var logger = sp.GetRequiredService<ILogger<Program>>();
 
-        try
-        {
-            var connectionString = configuration.GetConnectionString("DefaultConnection");
+    try {
+        var connectionString = configuration.GetConnectionString("DefaultConnection");
 
-            connectionString = connectionString?.Replace("${DB_HOST}", Environment.GetEnvironmentVariable("DB_HOST"))
-                .Replace("${DB_PORT}", Environment.GetEnvironmentVariable("DB_PORT"))
-                .Replace("${DB_NAME}", Environment.GetEnvironmentVariable("DB_NAME"))
-                .Replace("${DB_USER}", Environment.GetEnvironmentVariable("DB_USER"))
-                .Replace("${DB_PASSWORD}", Environment.GetEnvironmentVariable("DB_PASSWORD"));
+        connectionString = connectionString?.Replace("${DB_HOST}", Environment.GetEnvironmentVariable("DB_HOST"))
+            .Replace("${DB_PORT}", Environment.GetEnvironmentVariable("DB_PORT"))
+            .Replace("${DB_NAME}", Environment.GetEnvironmentVariable("DB_NAME"))
+            .Replace("${DB_USER}", Environment.GetEnvironmentVariable("DB_USER"))
+            .Replace("${DB_PASSWORD}", Environment.GetEnvironmentVariable("DB_PASSWORD"));
 
-            options.UseNpgsql(
-                connectionString,
-                npgsqlOptions =>
-                {
-                    // Assembly für Migrationen
-                    npgsqlOptions.MigrationsAssembly(typeof(ApplicationDbContext).Assembly.FullName);
+        var sslBuilder = new NpgsqlConnectionStringBuilder(connectionString);
 
-                    // Verbesserter Retry-Mechanismus mit umgebungsspezifischer Konfiguration
-                    npgsqlOptions.EnableRetryOnFailure(
-                        maxRetryCount: environment.IsDevelopment() ? 3 : 5,
-                        maxRetryDelay: TimeSpan.FromSeconds(environment.IsDevelopment() ? 15 : 30),
-                        errorCodesToAdd: null);
+        try {
+            var certPath = Environment.GetEnvironmentVariable("DB_SSL_CERT_PATH") ?? "/etc/ssl/certs/coolify-ca.crt";
 
-                    // Zusätzliche Sicherheits- und Leistungsempfehlungen
-                    npgsqlOptions.UseQuerySplittingBehavior(QuerySplittingBehavior.SplitQuery);
-                    npgsqlOptions.CommandTimeout(30);
-
-                    // SSL/TLS-Konfiguration kann hier hinzugefügt werden, falls noch nicht implementiert
-                });
-
-            if (!environment.IsDevelopment())
-            {
-                return;
+            if (File.Exists(certPath)) {
+                sslBuilder.SslMode = SslMode.VerifyFull;
+                sslBuilder.RootCertificate = certPath;
+                logger.LogInformation("SSL-Zertifikat erfolgreich konfiguriert: {CertPath}", certPath);
+            }
+            else {
+                // KRITISCHER FEHLER - Rot und fett markieren in Logs
+                var errorMessage = $"KRITISCHER SICHERHEITSFEHLER: SSL-Zertifikat nicht gefunden unter {certPath}!";
+                logger.LogCritical(errorMessage);
+                
+                // In der Konsole deutlich anzeigen (funktioniert nur in bestimmten Konsolen)
+                Console.ForegroundColor = ConsoleColor.Red;
+                Console.WriteLine("**********************************************");
+                Console.WriteLine(errorMessage);
+                Console.WriteLine("**********************************************");
+                Console.ResetColor();
+                
+                // Verbindungen abbrechen durch Exception
+                throw new FileNotFoundException($"SSL-Zertifikat nicht gefunden: {certPath}", certPath);
             }
 
-            options.EnableSensitiveDataLogging();
-            options.EnableDetailedErrors();
-            logger.LogInformation("Datenbankkonfiguration für Entwicklungsumgebung aktiviert");
+            connectionString = sslBuilder.ConnectionString;
         }
-        catch (Exception ex)
-        {
-            logger.LogError(ex, "Fehler bei der Datenbankkonfiguration");
+        catch (Exception ex) {
+            // Alle SSL-Konfigurationsfehler sind kritisch
+            logger.LogCritical(ex, "KRITISCHER FEHLER bei der SSL-Konfiguration");
+            
+            // In der Konsole deutlich anzeigen
+            Console.ForegroundColor = ConsoleColor.Red;
+            Console.WriteLine("**********************************************");
+            Console.WriteLine("KRITISCHER FEHLER: SSL-Konfiguration fehlgeschlagen!");
+            Console.WriteLine(ex.Message);
+            Console.WriteLine("**********************************************");
+            Console.ResetColor();
+            
+            // Exception weitergeben, um die Verbindung abzubrechen
             throw;
         }
+
+        options.UseNpgsql(
+            connectionString,
+            npgsqlOptions => {
+                // Assembly für Migrationen
+                npgsqlOptions.MigrationsAssembly(typeof(ApplicationDbContext).Assembly.FullName);
+
+                // Verbesserter Retry-Mechanismus mit umgebungsspezifischer Konfiguration
+                npgsqlOptions.EnableRetryOnFailure(
+                    maxRetryCount: environment.IsDevelopment() ? 3 : 5,
+                    maxRetryDelay: TimeSpan.FromSeconds(environment.IsDevelopment() ? 15 : 30),
+                    errorCodesToAdd: null);
+
+                // Zusätzliche Sicherheits- und Leistungsempfehlungen
+                npgsqlOptions.UseQuerySplittingBehavior(QuerySplittingBehavior.SplitQuery);
+                npgsqlOptions.CommandTimeout(30);
+            });
+
+        if (!environment.IsDevelopment()) {
+            return;
+        }
+        
+        options.EnableSensitiveDataLogging();
+        options.EnableDetailedErrors();
+        logger.LogInformation("Datenbankkonfiguration für Entwicklungsumgebung aktiviert");
     }
+    catch (Exception ex) {
+        logger.LogError(ex, "Fehler bei der Datenbankkonfiguration");
+        throw;
+    }
+}
 
     private static void AddCustomInterceptors(IServiceProvider sp, DbContextOptionsBuilder options) {
-        try
-        {
+        try {
             var auditInterceptor = sp.GetRequiredService<AuditSaveChangesInterceptor>();
             var tenantInterceptor = sp.GetRequiredService<TenantSaveChangesInterceptor>();
 
@@ -108,8 +146,7 @@ public class Program {
 
             Log.Information("Interceptors erfolgreich konfiguriert");
         }
-        catch (Exception ex)
-        {
+        catch (Exception ex) {
             Log.Error(ex, "Fehler bei der Konfiguration der Interceptors");
             throw;
         }
@@ -119,8 +156,7 @@ public class Program {
         var builder = WebApplication.CreateBuilder(args);
         Log.Information("Starte MultiTenant Backend");
 
-        try
-        {
+        try {
             ConfigureLogging(builder);
 
             var moduleSettings = builder.Configuration.GetSection("Modules").Get<Dictionary<string, bool>>()
@@ -134,8 +170,7 @@ public class Program {
             builder.Services.AddHttpContextAccessor();
             builder.Services.AddMemoryCache();
 
-            builder.Services.AddSession(options =>
-            {
+            builder.Services.AddSession(options => {
                 options.IdleTimeout = TimeSpan.FromMinutes(30);
                 options.Cookie.HttpOnly = true;
                 options.Cookie.IsEssential = true;
@@ -155,8 +190,7 @@ public class Program {
             builder.Services.AddScoped<TenantSaveChangesInterceptor>();
 
             // DbContext Konfiguration
-            builder.Services.AddDbContext<ApplicationDbContext>((sp, options) =>
-            {
+            builder.Services.AddDbContext<ApplicationDbContext>((sp, options) => {
                 ConfigureDatabaseOptions(sp, options);
                 AddCustomInterceptors(sp, options);
             });
@@ -184,8 +218,7 @@ public class Program {
             moduleManager.ConfigureServices(builder.Services, builder.Configuration);
 
             // CORS
-            builder.Services.AddCors(options =>
-            {
+            builder.Services.AddCors(options => {
                 options.AddPolicy("AllowSpecificOrigins",
                     policy => policy
                         .WithOrigins(
@@ -200,41 +233,35 @@ public class Program {
             Log.Information("Anwendung erfolgreich gebaut");
 
             // Datenbank-Initialisierung
-            using (var scope = app.Services.CreateScope())
-            {
+            using (var scope = app.Services.CreateScope()) {
                 var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
                 var logger = scope.ServiceProvider.GetRequiredService<ILogger<Program>>();
 
-                try
-                {
+                try {
                     logger.LogInformation("Migriere Datenbank...");
                     await dbContext.Database.MigrateAsync();
                     logger.LogInformation("Datenbank erfolgreich migriert");
                 }
-                catch (Exception ex)
-                {
+                catch (Exception ex) {
                     logger.LogError(ex, "Ein Fehler ist bei der Datenbankinitialisierung aufgetreten");
                     throw;
                 }
             }
 
             // HTTP-Pipeline-Konfiguration
-            if (app.Environment.IsDevelopment())
-            {
+            if (app.Environment.IsDevelopment()) {
                 app.UseDeveloperExceptionPage();
 
                 app.UseSwagger();
 
-                app.UseSwaggerUI(c =>
-                {
+                app.UseSwaggerUI(c => {
                     c.SwaggerEndpoint("/swagger/v1/swagger.json", "MultiTenant API v1");
                     c.RoutePrefix = "swagger";
                 });
 
                 app.MapControllers(); // Optional hier, kann auch global danach kommen
             }
-            else if (app.Environment.IsProduction())
-            {
+            else if (app.Environment.IsProduction()) {
                 app.UseExceptionHandler("/Error");
                 app.UseHsts();
 
@@ -245,21 +272,17 @@ public class Program {
                 app.UseCors("AllowDevelopment");
 
                 // Weitergeleitete Header verarbeiten (z.B. hinter einem Reverse Proxy)
-                app.UseForwardedHeaders(new ForwardedHeadersOptions
-                {
+                app.UseForwardedHeaders(new ForwardedHeadersOptions {
                     ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto
                 });
             }
 
-            app.UseSerilogRequestLogging(options =>
-            {
+            app.UseSerilogRequestLogging(options => {
                 options.MessageTemplate =
                     "HTTP {RequestMethod} {RequestPath} responded {StatusCode} in {Elapsed:0.0000} ms";
 
-                options.EnrichDiagnosticContext = (diagnosticContext, httpContext) =>
-                {
-                    if (httpContext.Request.Host.Value != null)
-                    {
+                options.EnrichDiagnosticContext = (diagnosticContext, httpContext) => {
+                    if (httpContext.Request.Host.Value != null) {
                         diagnosticContext.Set("Host", httpContext.Request.Host.Value);
                     }
 
@@ -278,21 +301,18 @@ public class Program {
 
             app.MapGraphQL();
 
-            app.UseWebSockets(new WebSocketOptions
-            {
+            app.UseWebSockets(new WebSocketOptions {
                 KeepAliveInterval = TimeSpan.FromMinutes(2)
             });
 
             Log.Information("Starte Anwendung...");
             await app.RunAsync();
         }
-        catch (Exception ex)
-        {
+        catch (Exception ex) {
             Log.Fatal(ex, "Host wurde unerwartet beendet");
             throw;
         }
-        finally
-        {
+        finally {
             await Log.CloseAndFlushAsync();
         }
     }
