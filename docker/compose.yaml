@@ -2,10 +2,6 @@
 services:
   ome.api:
     image: ${CI_REGISTRY_IMAGE:-ome.api}:${CI_COMMIT_SHA:-latest}
-    labels:
-      - caddy.0.route=dev-api.officemadeeasy.eu
-      - caddy.0.handle.0.handler=reverse_proxy
-      - caddy.0.handle.0.upstreams.0.dial=:8080
     build:
       context: ..
       dockerfile: docker/Dockerfile
