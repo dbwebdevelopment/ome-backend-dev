@@ -9,7 +9,7 @@ services:
      - traefik.http.routers.ome-api.middlewares=gzip
      - traefik.http.routers.ome-api.service=ome-backend-service
      - traefik.http.routers.ome-api.tls=true
-     - traefik.http.services.ome-api.loadbalancer.server.port=80
+     - traefik.http.services.ome-api.loadbalancer.server.port=8080
      - traefik.http.routers.ome-api.tls.certresolver=letsencrypt
       
      - traefik.http.routers.ome-api.rule=Host(`dev-api.officemadeeasy.eu`) && PathPrefix(`/`)
