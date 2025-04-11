@@ -5,7 +5,7 @@ services:
     labels:
       # Caddy-Routing-Konfiguration
       - caddy=dev-api.officemadeeasy.eu
-      - caddy.reverse_proxy=:8080
+      - caddy.reverse_proxy=:443
     build:
       context: ..
       dockerfile: docker/Dockerfile
@@ -13,7 +13,7 @@ services:
         BUILD_CONFIGURATION: Release
     environment:
       - ASPNETCORE_ENVIRONMENT=Production
-      - ASPNETCORE_URLS=https://+:8443
+      - ASPNETCORE_URLS=http://+:8080;https://+:8443
       - ASPNETCORE_HTTPS_PORT=8443
       - ConnectionStrings__DefaultConnection=Server=${DB_HOST};Port=${DB_PORT};Database=${DB_NAME};User=${DB_USER};Password=${DB_PASSWORD};SslMode=VerifyCA;SslCa=${DB_SSL_CA_PATH}
       - Keycloak__BaseUrl=${KEYCLOAK_BASE_URL}
@@ -23,8 +23,9 @@ services:
       - Keycloak__AdminClientId=${KEYCLOAK_ADMIN_CLIENT_ID}
       - Keycloak__AdminClientSecret=${KEYCLOAK_ADMIN_CLIENT_SECRET}
       - Frontend__BaseUrl=${FRONTEND_BASE_URL}
+    ports:
+      - "8443"
     expose:
-      - 8080
       - 8443
     volumes:
       - /etc/ssl/certs/Coolify_Internal_CA_Root_CA_63765285545590635409030008279072883721.pem:/etc/ssl/certs/Coolify_Internal_CA_Root_CA_63765285545590635409030008279072883721.pem:ro
