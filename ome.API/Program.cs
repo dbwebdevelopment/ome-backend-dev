@@ -1,7 +1,5 @@
-using System.Security.Cryptography.X509Certificates;
 using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.EntityFrameworkCore;
-using Npgsql;
 using ome.API.Extensions;
 using ome.API.GraphQL.Extensions;
 using ome.API.GraphQL.Middlewares;
@@ -63,18 +61,20 @@ public class Program {
                 .Replace("${DB_USER}", Environment.GetEnvironmentVariable("DB_USER"))
                 .Replace("${DB_PASSWORD}", Environment.GetEnvironmentVariable("DB_PASSWORD"));
 
-            var sslBuilder = new NpgsqlConnectionStringBuilder(connectionString);
+            // MySQL/MariaDB Connection String verwenden
+            // SSL-Konfiguration für MariaDB ist einfacher
+            var sslEnabled = !string.IsNullOrEmpty(Environment.GetEnvironmentVariable("DB_SSL_ENABLED")) &&
+                             Environment.GetEnvironmentVariable("DB_SSL_ENABLED")?.ToLower() == "true";
 
-            try {
-                // Pfad zum Root-CA-Zertifikat
+            if (sslEnabled) {
+                // SSL für MariaDB einrichten
                 var rootCaCertPath = Environment.GetEnvironmentVariable("DB_SSL_CA_PATH");
 
                 if (File.Exists(rootCaCertPath)) {
-                    // VerifyFull mit Root-CA-Zertifikat
-                    sslBuilder.SslMode = SslMode.VerifyFull;
-                    sslBuilder.RootCertificate = rootCaCertPath;
+                    // SSL mit CA-Zertifikat hinzufügen
+                    connectionString += $";SslMode=VerifyCA;SslCa={rootCaCertPath}";
 
-                    logger.LogInformation("SSL-Konfiguration mit VerifyFull und Root-CA-Zertifikat: {CertPath}",
+                    logger.LogInformation("SSL-Konfiguration mit VerifyCA und Root-CA-Zertifikat: {CertPath}",
                         rootCaCertPath);
                 }
                 else {
@@ -94,40 +94,28 @@ public class Program {
                     throw new FileNotFoundException($"Root-CA-Zertifikat nicht gefunden: {rootCaCertPath}",
                         rootCaCertPath);
                 }
-
-                connectionString = sslBuilder.ConnectionString;
-            }
-            catch (Exception ex) {
-                // Alle SSL-Konfigurationsfehler sind kritisch
-                logger.LogCritical(ex, "KRITISCHER FEHLER bei der SSL-Konfiguration");
-
-                // In der Konsole deutlich anzeigen
-                Console.ForegroundColor = ConsoleColor.Red;
-                Console.WriteLine("**********************************************");
-                Console.WriteLine("KRITISCHER FEHLER: SSL-Konfiguration fehlgeschlagen!");
-                Console.WriteLine(ex.Message);
-                Console.WriteLine("**********************************************");
-                Console.ResetColor();
-
-                // Exception weitergeben, um die Verbindung abzubrechen
-                throw;
             }
 
-            options.UseNpgsql(
+            // Server Version ermitteln - für MariaDB wichtig
+            // In der Produktion besser die tatsächliche Version angeben
+            var serverVersion = new MariaDbServerVersion(new Version(10, 5, 0));
+
+            options.UseMySql(
                 connectionString,
-                npgsqlOptions => {
+                serverVersion,
+                mysqlOptions => {
                     // Assembly für Migrationen
-                    npgsqlOptions.MigrationsAssembly(typeof(ApplicationDbContext).Assembly.FullName);
+                    mysqlOptions.MigrationsAssembly(typeof(ApplicationDbContext).Assembly.FullName);
 
                     // Verbesserter Retry-Mechanismus mit umgebungsspezifischer Konfiguration
-                    npgsqlOptions.EnableRetryOnFailure(
+                    mysqlOptions.EnableRetryOnFailure(
                         maxRetryCount: environment.IsDevelopment() ? 3 : 5,
                         maxRetryDelay: TimeSpan.FromSeconds(environment.IsDevelopment() ? 15 : 30),
-                        errorCodesToAdd: null);
+                        errorNumbersToAdd: null);
 
-                    // Zusätzliche Sicherheits- und Leistungsempfehlungen
-                    npgsqlOptions.UseQuerySplittingBehavior(QuerySplittingBehavior.SplitQuery);
-                    npgsqlOptions.CommandTimeout(30);
+                    // Zusätzliche Leistungsempfehlungen
+                    mysqlOptions.UseQuerySplittingBehavior(QuerySplittingBehavior.SplitQuery);
+                    mysqlOptions.CommandTimeout(30);
                 });
 
             if (!environment.IsDevelopment()) {

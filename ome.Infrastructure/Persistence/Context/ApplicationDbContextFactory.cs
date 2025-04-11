@@ -2,7 +2,6 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Design;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
-
 namespace ome.Infrastructure.Persistence.Context;
 
 public class ApplicationDbContextFactory: IDesignTimeDbContextFactory<ApplicationDbContext> {
@@ -25,7 +24,10 @@ public class ApplicationDbContextFactory: IDesignTimeDbContextFactory<Applicatio
 
         var optionsBuilder = new DbContextOptionsBuilder<ApplicationDbContext>();
 
-        optionsBuilder.UseNpgsql(connectionString,
+        // Verwende MariaDB anstelle von PostgreSQL
+        var serverVersion = new MariaDbServerVersion(new Version(10, 5, 0));
+        
+        optionsBuilder.UseMySql(connectionString, serverVersion,
             options => options.MigrationsAssembly(typeof(ApplicationDbContext).Assembly.FullName));
 
         // Create a minimal implementation of required services
